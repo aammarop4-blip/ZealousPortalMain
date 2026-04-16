@@ -4,29 +4,53 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const db = knex({
+const isMSSQL = process.env.DB_CLIENT === 'mssql';
+
+const dbConfig = isMSSQL ? {
+  client: 'mssql',
+  connection: {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    options: {
+      encrypt: true, // For Azure/Cloud connections
+      trustServerCertificate: true // Useful for local dev instances
+    }
+  }
+} : {
   client: 'sqlite3',
   connection: {
     filename: path.join(__dirname, 'database.sqlite'),
   },
   useNullAsDefault: true,
-});
+};
+
+const db = knex(dbConfig);
 
 export async function initDb() {
   // Users table
   if (!(await db.schema.hasTable('users'))) {
     await db.schema.createTable('users', (table) => {
       table.increments('id').primary();
+      table.string('employee_id').unique().nullable(); // For User ID login
       table.string('email').unique().notNullable();
       table.string('password').notNullable();
-      table.string('role').notNullable(); // 'ADMIN', 'HR', 'EMPLOYEE'
+      table.string('role').notNullable(); // 'ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT'
       table.string('name').notNullable();
       table.timestamps(true, true);
     });
+  } else {
+    // Migration: Add employee_id if missing
+    const hasEmployeeId = await db.schema.hasColumn('users', 'employee_id');
+    if (!hasEmployeeId) {
+      await db.schema.table('users', (table) => {
+        table.string('employee_id').unique().nullable();
+      });
+    }
   }
 
   // Employees table
-  await db.schema.dropTableIfExists('employees');
   if (!(await db.schema.hasTable('employees'))) {
     await db.schema.createTable('employees', (table) => {
       table.increments('EmployeeID').primary();
@@ -39,13 +63,37 @@ export async function initDb() {
       table.date('HireDate');
       table.string('Status', 20); // Active, Terminated, On Probation
       table.integer('user_id').references('id').inTable('users');
+      table.string('custom_employee_id').unique(); // e.g. ZS-001
+      table.timestamps(true, true);
+    });
+  } else {
+    // Migration: Add missing columns if they don't exist
+    const hasUserId = await db.schema.hasColumn('employees', 'user_id');
+    const hasCustomId = await db.schema.hasColumn('employees', 'custom_employee_id');
+    
+    if (!hasUserId || !hasCustomId) {
+      await db.schema.table('employees', (table) => {
+        if (!hasUserId) table.integer('user_id').references('id').inTable('users');
+        if (!hasCustomId) table.string('custom_employee_id').unique();
+      });
+    }
+  }
+
+  // Performance Reports (CSV Uploads)
+  if (!(await db.schema.hasTable('performance_reports'))) {
+    await db.schema.createTable('performance_reports', (table) => {
+      table.increments('id').primary();
+      table.integer('EmployeeID').references('EmployeeID').inTable('employees');
+      table.string('date');
+      table.float('score');
+      table.string('metric_name');
+      table.text('comments');
+      table.integer('uploaded_by').references('id').inTable('users');
       table.timestamps(true, true);
     });
   }
 
   // Training Modules
-  await db.schema.dropTableIfExists('EmployeeTraining');
-  await db.schema.dropTableIfExists('TrainingModules');
   if (!(await db.schema.hasTable('TrainingModules'))) {
     await db.schema.createTable('TrainingModules', (table) => {
       table.increments('ModuleID').primary();
@@ -69,8 +117,6 @@ export async function initDb() {
   }
 
   // Assessments
-  await db.schema.dropTableIfExists('EmployeeAssessments');
-  await db.schema.dropTableIfExists('Assessments');
   if (!(await db.schema.hasTable('Assessments'))) {
     await db.schema.createTable('Assessments', (table) => {
       table.increments('AssessmentID').primary();
@@ -94,8 +140,6 @@ export async function initDb() {
   }
 
   // Performance Records
-  await db.schema.dropTableIfExists('performance_records');
-  await db.schema.dropTableIfExists('PerformanceRecords');
   if (!(await db.schema.hasTable('PerformanceRecords'))) {
     await db.schema.createTable('PerformanceRecords', (table) => {
       table.increments('PerformanceID').primary();
@@ -109,8 +153,6 @@ export async function initDb() {
   }
 
   // Salary Slips
-  await db.schema.dropTableIfExists('salary_slips');
-  await db.schema.dropTableIfExists('SalarySlips');
   if (!(await db.schema.hasTable('SalarySlips'))) {
     await db.schema.createTable('SalarySlips', (table) => {
       table.increments('SalarySlipID').primary();
@@ -126,8 +168,6 @@ export async function initDb() {
   }
 
   // Alerts
-  await db.schema.dropTableIfExists('alerts');
-  await db.schema.dropTableIfExists('Alerts');
   if (!(await db.schema.hasTable('Alerts'))) {
     await db.schema.createTable('Alerts', (table) => {
       table.increments('AlertID').primary();
@@ -193,25 +233,42 @@ export async function initDb() {
 
   // Create default admin if not exists
   const admin = await db('users').where({ email: 'admin@zealous.com' }).first();
+  const bcryptModule = await import('bcryptjs');
+  const bcrypt = bcryptModule.default || bcryptModule;
+
   if (!admin) {
-    const bcrypt = await import('bcryptjs');
-    const hashedPassword = await bcrypt.default.hash('admin123', 10);
+    const hashedPassword = await bcrypt.hash('admin123', 10);
     await db('users').insert({
+      employee_id: 'ZS-000',
       email: 'admin@zealous.com',
       password: hashedPassword,
       role: 'ADMIN',
       name: 'System Admin',
     });
-    console.log('Default admin created: admin@zealous.com / admin123');
+    console.log('Default admin created');
+  }
+
+  // Create HR if not exists
+  const hrUser = await db('users').where({ email: 'hr@zealous.com' }).first();
+  if (!hrUser) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    await db('users').insert({
+      employee_id: 'ZS-999',
+      email: 'hr@zealous.com',
+      password: hashedPassword,
+      role: 'HR',
+      name: 'HR Manager',
+    });
+    console.log('Default HR created');
   }
 
   // Seed some employees if empty
   const empCount = await db('employees').count('EmployeeID as count').first();
   if (empCount && (empCount as any).count === 0) {
     await db('employees').insert([
-      { FirstName: 'Sarah', LastName: 'Connor', Email: 'sarah@zealous.com', Phone: '555-0101', Department: 'HR', Position: 'Director', Status: 'Active', HireDate: '2024-01-15' },
-      { FirstName: 'John', LastName: 'Doe', Email: 'john@zealous.com', Phone: '555-0102', Department: 'Operations', Position: 'Manager', Status: 'On Probation', HireDate: '2024-03-01' },
-      { FirstName: 'Mark', LastName: 'Smith', Email: 'mark@zealous.com', Phone: '555-0103', Department: 'Compliance', Position: 'Officer', Status: 'Active', HireDate: '2024-02-20' }
+      { FirstName: 'Sarah', LastName: 'Connor', Email: 'sarah@zealous.com', Phone: '555-0101', Department: 'HR', Position: 'Director', Status: 'Active', HireDate: '2024-01-15', custom_employee_id: 'ZS-001' },
+      { FirstName: 'John', LastName: 'Doe', Email: 'john@zealous.com', Phone: '555-0102', Department: 'Operations', Position: 'Manager', Status: 'On Probation', HireDate: '2024-03-01', custom_employee_id: 'ZS-002' },
+      { FirstName: 'Mark', LastName: 'Smith', Email: 'mark@zealous.com', Phone: '555-0103', Department: 'Compliance', Position: 'Officer', Status: 'Active', HireDate: '2024-02-20', custom_employee_id: 'ZS-003' }
     ]);
     console.log('Employee seed data added');
   }
@@ -261,6 +318,17 @@ export async function initDb() {
       { EmployeeID: 2, Date: today, CheckIn: '08:55', CheckOut: '17:55', Status: 'Present' }
     ]);
     console.log('Attendance seeded');
+  }
+
+  // Seed Salary Slips
+  const slipCount = await db('SalarySlips').count('SalarySlipID as count').first();
+  if (slipCount && (slipCount as any).count === 0) {
+    await db('SalarySlips').insert([
+      { EmployeeID: 1, MonthYear: 'March 2026', BasicSalary: 150000, Allowances: 25000, Deductions: 12000, NetSalary: 163000, GeneratedDate: '2026-03-31' },
+      { EmployeeID: 1, MonthYear: 'February 2026', BasicSalary: 150000, Allowances: 20000, Deductions: 12000, NetSalary: 158000, GeneratedDate: '2026-02-28' },
+      { EmployeeID: 2, MonthYear: 'March 2026', BasicSalary: 120000, Allowances: 15000, Deductions: 8000, NetSalary: 127000, GeneratedDate: '2026-03-31' }
+    ]);
+    console.log('Salary slips seeded');
   }
 }
 

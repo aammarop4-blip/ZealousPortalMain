@@ -2,10 +2,14 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import db, { initDb } from './db.js';
-import bcrypt from 'bcryptjs';
+import db, { initDb } from './db.ts';
+import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import multer from 'multer';
+
+const bcrypt = (bcryptjs as any).default || bcryptjs;
+const upload = multer({ dest: 'uploads/' });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'zealous-secret-key';
@@ -34,9 +38,13 @@ async function startServer() {
 
   // Auth
   app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+    const { loginId, password } = req.body; // loginId can be email or employee_id
     try {
-      const user = await db('users').where({ email }).first();
+      const user = await db('users')
+        .where('email', loginId)
+        .orWhere('employee_id', loginId)
+        .first();
+
       if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
       const isValid = await bcrypt.compare(password, user.password);
@@ -46,9 +54,10 @@ async function startServer() {
       
       await logAudit(user.id, 'LOGIN', 'User logged in successfully', req);
       
-      res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
-    } catch (err) {
-      res.status(500).json({ error: 'Server error' });
+      res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name, employee_id: user.employee_id } });
+    } catch (err: any) {
+      console.error('Login Error:', err);
+      res.status(500).json({ error: err.message || 'Server error' });
     }
   });
 
@@ -116,7 +125,10 @@ async function startServer() {
   };
 
   // Employees
-  app.get('/api/employees', authenticate, async (req, res) => {
+  app.get('/api/employees', authenticate, async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized role' });
+    }
     try {
       const employees = await db('employees')
         .join('users', 'employees.user_id', 'users.id')
@@ -127,7 +139,10 @@ async function startServer() {
     }
   });
 
-  app.get('/api/employees/:id', authenticate, async (req, res) => {
+  app.get('/api/employees/:id', authenticate, async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized role' });
+    }
     try {
       const employee = await db('employees')
         .where('employees.EmployeeID', req.params.id)
@@ -187,28 +202,120 @@ async function startServer() {
   });
 
   // Training
-  app.get('/api/training/modules', authenticate, async (req, res) => {
+  app.get('/api/training/modules', authenticate, async (req: any, res) => {
     try {
-      const modules = await db('TrainingModules').select('*');
+      const emp = await db('employees').where({ user_id: req.user.id }).first();
+      
+      const modules = await db('TrainingModules')
+        .select(
+          'TrainingModules.*',
+          'EmployeeTraining.Status as CompletionStatus',
+          'EmployeeAssessments.Score as LastScore'
+        )
+        .leftJoin('EmployeeTraining', function() {
+          this.on('TrainingModules.ModuleID', '=', 'EmployeeTraining.ModuleID')
+              .andOn('EmployeeTraining.EmployeeID', '=', db.raw('?', [emp?.EmployeeID || 0]));
+        })
+        .leftJoin('Assessments', 'TrainingModules.ModuleID', 'Assessments.ModuleID')
+        .leftJoin('EmployeeAssessments', function() {
+          this.on('Assessments.AssessmentID', '=', 'EmployeeAssessments.AssessmentID')
+              .andOn('EmployeeAssessments.EmployeeID', '=', db.raw('?', [emp?.EmployeeID || 0]));
+        });
+
       res.json(modules);
     } catch (err) {
+      console.error('Training Modules Error:', err);
       res.status(500).json({ error: 'Server error' });
     }
   });
 
   // Salary Slips
-  app.get('/api/salary-slips', authenticate, async (req: any, res) => {
-    try {
-      let query = db('SalarySlips').join('employees', 'SalarySlips.EmployeeID', 'employees.EmployeeID');
-      if (req.user.role === 'EMPLOYEE') {
-        const emp = await db('employees').where({ user_id: req.user.id }).first();
-        query = query.where('SalarySlips.EmployeeID', emp.EmployeeID);
-      }
-      const slips = await query.select('SalarySlips.*', 'employees.EmployeeID as emp_code');
-      res.json(slips);
-    } catch (err) {
-      res.status(500).json({ error: 'Server error' });
+  // User Creation (Admin/Management/TeamLead/HR)
+  app.post('/api/users', authenticate, async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized' });
     }
+
+    let { email, name, role, employee_id, password } = req.body;
+    try {
+      // Auto-generate employee_id if not provided
+      if (!employee_id) {
+        const lastEmp = await db('employees')
+          .where('custom_employee_id', 'like', 'ZS-%')
+          .orderBy('custom_employee_id', 'desc')
+          .first();
+        
+        let nextNum = 1;
+        if (lastEmp && lastEmp.custom_employee_id) {
+          const match = lastEmp.custom_employee_id.match(/ZS-(\d+)/);
+          if (match) {
+            nextNum = parseInt(match[1]) + 1;
+          }
+        }
+        employee_id = `ZS-${nextNum.toString().padStart(3, '0')}`;
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const [userId] = await db('users').insert({
+        email,
+        name,
+        role,
+        employee_id,
+        password: hashedPassword
+      });
+
+      // Link to employee record if needed
+      await db('employees').insert({
+        FirstName: name.split(' ')[0],
+        LastName: name.split(' ')[1] || '',
+        Email: email,
+        user_id: userId,
+        custom_employee_id: employee_id,
+        Status: 'Active'
+      });
+
+      res.json({ success: true, userId, employee_id });
+    } catch (err) {
+      console.error('User Creation Error:', err);
+      res.status(500).json({ error: 'Error creating user' });
+    }
+  });
+
+  // Performance CSV Upload
+  app.post('/api/performance/upload-data', authenticate, async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const { data } = req.body;
+    try {
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          // Simulation of saving to DB
+          await db('performance_reports').insert({
+            EmployeeID: row.EmployeeID,
+            Date: row.Date,
+            Score: row.Score,
+            MetricName: row.MetricName,
+            Comments: row.Comments
+          });
+        }
+      }
+      res.json({ success: true, message: `${data.length} records processed` });
+    } catch (err) {
+      console.error('CSV Data Save Error:', err);
+      res.status(500).json({ error: 'Failed to save performance data' });
+    }
+  });
+
+  app.post('/api/performance/upload', authenticate, upload.single('file'), async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // In a real app, we'd parse the CSV here using papaparse
+    // For now, we'll just acknowledge the upload
+    res.json({ success: true, message: 'File uploaded and processing' });
   });
 
   // Job Postings (Public)

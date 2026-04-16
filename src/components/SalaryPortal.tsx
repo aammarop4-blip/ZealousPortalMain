@@ -63,7 +63,7 @@ export default function SalaryPortal() {
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Current Month</span>
           </div>
           <div className="text-3xl font-bold text-white mb-1">
-            {slips.length > 0 ? `$${slips[0].NetSalary.toLocaleString()}` : '$0.00'}
+            {slips.length > 0 ? `PKR ${slips[0].NetSalary.toLocaleString()}` : 'PKR 0.00'}
           </div>
           <div className="text-zinc-500 text-sm">Net Payable Amount</div>
         </div>
@@ -76,7 +76,7 @@ export default function SalaryPortal() {
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Year to Date</span>
           </div>
           <div className="text-3xl font-bold text-white mb-1">
-            ${slips.reduce((acc, curr) => acc + curr.NetSalary, 0).toLocaleString()}
+            PKR {slips.reduce((acc, curr) => acc + curr.NetSalary, 0).toLocaleString()}
           </div>
           <div className="text-zinc-500 text-sm">Total Earnings 2026</div>
         </div>
@@ -115,7 +115,7 @@ export default function SalaryPortal() {
               </div>
               <div className="flex items-center gap-12">
                 <div className="text-right">
-                  <div className="text-white font-bold">${slip.NetSalary.toLocaleString()}</div>
+                  <div className="text-white font-bold">PKR {slip.NetSalary.toLocaleString()}</div>
                   <div className="text-[10px] text-green-500 font-bold uppercase tracking-widest">Paid</div>
                 </div>
                 <button 

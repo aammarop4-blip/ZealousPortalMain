@@ -17,7 +17,9 @@ import {
   CheckCircle2,
   Calendar,
   UserCheck,
-  Key
+  Key,
+  LayoutDashboard,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -40,13 +42,16 @@ import EmployeeProfile from './components/EmployeeProfile';
 import AttendancePortal from './components/AttendancePortal';
 import ForgotPassword from './components/ForgotPassword';
 import PerformanceCharts from './components/PerformanceCharts';
+import ManagerDashboard from './components/ManagerDashboard';
+import PerformanceUpload from './components/PerformanceUpload';
 
 // --- Types ---
 interface User {
   id: number;
   email: string;
-  role: 'ADMIN' | 'HR' | 'EMPLOYEE';
+  role: 'HR' | 'ADMIN' | 'MANAGEMENT' | 'TEAM_LEAD' | 'AGENT';
   name: string;
+  employee_id?: string;
 }
 
 // --- Components ---
@@ -88,15 +93,17 @@ const Navbar = ({ user, onLogout }: { user: User | null, onLogout: () => void })
 const Sidebar = ({ role }: { role: string }) => {
   const location = useLocation();
   const menuItems = [
-    { icon: BarChart3, label: 'Dashboard', path: '/dashboard', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: Users, label: 'Employees', path: '/employees', roles: ['ADMIN', 'HR'] },
-    { icon: UserCheck, label: 'Attendance', path: '/attendance', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: BarChart3, label: 'Performance', path: '/performance', roles: ['ADMIN', 'HR'] },
-    { icon: BookOpen, label: 'Training', path: '/training', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: CheckCircle2, label: 'Assessments', path: '/assessments', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: CreditCard, label: 'Payroll', path: '/payroll', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: Bell, label: 'Alerts', path: '/alerts', roles: ['ADMIN', 'HR', 'EMPLOYEE'] },
-    { icon: Award, label: 'Recognition', path: '/recognition', roles: ['ADMIN', 'HR'] },
+    { icon: BarChart3, label: 'Dashboard', path: '/dashboard', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: LayoutDashboard, label: 'Team Dashboard', path: '/manager-dashboard', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+    { icon: Users, label: 'Employees', path: '/employees', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+    { icon: UserCheck, label: 'Attendance', path: '/attendance', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: BarChart3, label: 'Performance', path: '/performance', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+    { icon: BookOpen, label: 'Training', path: '/training', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: CheckCircle2, label: 'Assessments', path: '/assessments', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: CreditCard, label: 'Payroll', path: '/payroll', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: Bell, label: 'Alerts', path: '/alerts', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+    { icon: Upload, label: 'Upload Reports', path: '/upload-reports', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+    { icon: Award, label: 'Recognition', path: '/recognition', roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
   ];
 
   return (
@@ -139,6 +146,25 @@ const LandingPage = () => {
           <p className="text-zinc-400 text-xl mb-12 max-w-xl leading-relaxed">
             Streamline your employee lifecycle with Zealous Solutions. From onboarding to performance, we automate the complexity of HR management.
           </p>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-12">
+            {[
+              { label: 'Admin', role: 'ADMIN' },
+              { label: 'Management', role: 'MANAGEMENT' },
+              { label: 'Team Lead', role: 'TEAM_LEAD' },
+              { label: 'Agent', role: 'AGENT' }
+            ].map((btn) => (
+              <Link 
+                key={btn.role}
+                to="/login" 
+                className="flex flex-col items-center justify-center p-6 bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-orange-600 transition-all group"
+              >
+                <div className="text-lg font-bold text-zinc-400 group-hover:text-white">{btn.label}</div>
+                <div className="text-[10px] text-zinc-600 uppercase tracking-widest mt-1">Portal</div>
+              </Link>
+            ))}
+          </div>
+
           <div className="flex gap-4">
             <Link to="/login" className="bg-white text-black px-8 py-4 rounded font-bold hover:bg-zinc-200 transition-all flex items-center gap-2">
               Access Portal <ChevronRight size={20} />
@@ -205,7 +231,7 @@ const LandingPage = () => {
 };
 
 const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
-  const [email, setEmail] = React.useState('admin@zealous.com');
+  const [loginId, setLoginId] = React.useState('admin@zealous.com');
   const [password, setPassword] = React.useState('admin123');
   const [error, setError] = React.useState('');
   const navigate = useNavigate();
@@ -216,7 +242,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ loginId, password })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -238,20 +264,20 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
       >
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-bold text-white mb-2">Portal Login</h2>
-          <p className="text-zinc-500">Enter your credentials to access the HR system</p>
+          <p className="text-zinc-500">Enter your Email or User ID to access the system</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded text-sm">{error}</div>}
           
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Email Address</label>
+            <label className="text-xs font-bold uppercase tracking-widest text-zinc-500">Email or User ID</label>
             <input 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text" 
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-orange-600 transition-colors"
-              placeholder="name@zealous.com"
+              placeholder="name@zealous.com or ZS-000"
             />
           </div>
 
@@ -282,8 +308,17 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
 };
 
 const Dashboard = ({ user }: { user: User }) => {
+  const navigate = useNavigate();
   return (
     <div className="p-8 space-y-8">
+      <div className="flex flex-wrap gap-4 bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800 border-dashed">
+        <h3 className="w-full text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Role Access Portals</h3>
+        <button onClick={() => navigate("/admin")} className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white px-6 py-4 rounded-xl font-bold transition-all shadow-sm">Admin Portal</button>
+        <button onClick={() => navigate("/management")} className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white px-6 py-4 rounded-xl font-bold transition-all shadow-sm">Management Portal</button>
+        <button onClick={() => navigate("/teamlead")} className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white px-6 py-4 rounded-xl font-bold transition-all shadow-sm">Team Lead Portal</button>
+        <button onClick={() => navigate("/agent")} className="flex-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white px-6 py-4 rounded-xl font-bold transition-all shadow-sm">Agent Portal</button>
+      </div>
+
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-4xl font-bold text-white tracking-tight">System Overview</h1>
@@ -314,7 +349,7 @@ const Dashboard = ({ user }: { user: User }) => {
         ))}
       </div>
 
-      {user.role === 'EMPLOYEE' && (
+      {user.role === 'AGENT' && (
         <div className="space-y-8">
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl flex flex-col md:flex-row items-center gap-8">
             <div className="w-24 h-24 rounded-full bg-orange-600/10 flex items-center justify-center text-orange-600 text-3xl font-bold">
@@ -324,6 +359,10 @@ const Dashboard = ({ user }: { user: User }) => {
               <h2 className="text-2xl font-bold text-white mb-1">Welcome, {user.name}</h2>
               <p className="text-zinc-500">You have 2 pending training modules and your next salary slip will be available in 12 days.</p>
             </div>
+            <div className="flex gap-4 text-right">
+              <div className="text-xs text-zinc-500 uppercase mb-1">Last Payout</div>
+              <div className="text-2xl font-bold text-white">PKR 125,000</div>
+            </div>
             <div className="flex gap-4">
               <Link to="/attendance" className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20">
                 Check In Now
@@ -332,6 +371,23 @@ const Dashboard = ({ user }: { user: User }) => {
           </div>
 
           <PerformanceCharts />
+        </div>
+      )}
+
+      {(user.role === 'ADMIN' || user.role === 'MANAGEMENT') && (
+        <div className="bg-orange-600/5 border border-orange-600/20 p-6 rounded-2xl flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-orange-600/10 rounded-xl text-orange-600">
+              <LayoutDashboard size={24} />
+            </div>
+            <div>
+              <h3 className="text-white font-bold">Managerial Insights Available</h3>
+              <p className="text-zinc-500 text-sm text-balance">View your team's performance distribution, training compliance, and pending approvals in the dedicated dashboard.</p>
+            </div>
+          </div>
+          <Link to="/manager-dashboard" className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg shadow-orange-600/20 whitespace-nowrap">
+            Go to Team Dashboard
+          </Link>
         </div>
       )}
 
@@ -370,12 +426,19 @@ const Dashboard = ({ user }: { user: User }) => {
           <h3 className="font-bold text-white mb-6">Quick Actions</h3>
           <div className="space-y-3">
             {[
-              { label: 'Add Employee', icon: Plus },
-              { label: 'Generate Reports', icon: FileText },
-              { label: 'Issue Warning', icon: AlertTriangle },
-              { label: 'Download Payslips', icon: Download },
-            ].map((action, i) => (
-              <button key={i} className="w-full flex items-center gap-3 px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-all text-sm font-medium">
+              { label: 'Add Employee', icon: Plus, roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+              { label: 'Generate Reports', icon: FileText, roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+              { label: 'Issue Warning', icon: AlertTriangle, roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'] },
+              { label: 'Download Payslips', icon: Download, roles: ['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'AGENT', 'HR'] },
+            ].filter(action => action.roles.includes(user.role)).map((action, i) => (
+              <button 
+                key={i} 
+                onClick={() => {
+                  if (action.label === 'Add Employee') navigate('/employees');
+                  if (action.label === 'Download Payslips') navigate('/payroll');
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 bg-zinc-950 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:border-zinc-600 transition-all text-sm font-medium"
+              >
                 <action.icon size={18} />
                 {action.label}
               </button>
@@ -426,17 +489,23 @@ export default function App() {
               <Route path="/" element={!user ? <LandingPage /> : <Dashboard user={user} />} />
               <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
               <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <LoginPage onLogin={handleLogin} />} />
-              <Route path="/employees" element={user && (user.role === 'ADMIN' || user.role === 'HR') ? <EmployeeManagement /> : <LoginPage onLogin={handleLogin} />} />
-              <Route path="/employees/:id" element={user && (user.role === 'ADMIN' || user.role === 'HR') ? <EmployeeProfile /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/admin" element={user && user.role === 'ADMIN' ? <Dashboard user={user} /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/management" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT') ? <Dashboard user={user} /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/teamlead" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD') ? <Dashboard user={user} /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/agent" element={user ? <Dashboard user={user} /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/manager-dashboard" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <ManagerDashboard /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/employees" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <EmployeeManagement /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/employees/:id" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <EmployeeProfile /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/attendance" element={user ? <AttendancePortal /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ForgotPassword />} />
               <Route path="/training" element={user ? <TrainingPortal /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/payroll" element={user ? <SalaryPortal /> : <LoginPage onLogin={handleLogin} />} />
-              <Route path="/performance" element={user && (user.role === 'ADMIN' || user.role === 'HR') ? <PerformanceManagement /> : <LoginPage onLogin={handleLogin} />} />
-              <Route path="/recognition" element={user && (user.role === 'ADMIN' || user.role === 'HR') ? <RecognitionPortal /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/performance" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <PerformanceManagement /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/recognition" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <RecognitionPortal /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/alerts" element={user ? <AlertsPage /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/assessments" element={user ? <AssessmentPortal /> : <LoginPage onLogin={handleLogin} />} />
+              <Route path="/upload-reports" element={user && (user.role === 'ADMIN' || user.role === 'MANAGEMENT' || user.role === 'TEAM_LEAD' || user.role === 'HR') ? <PerformanceUpload /> : <LoginPage onLogin={handleLogin} />} />
               <Route path="/jobs" element={<JobPostings />} />
               <Route path="*" element={<div className="p-8 text-white">Module coming soon...</div>} />
             </Routes>
