@@ -156,6 +156,42 @@ async function startServer() {
     }
   });
 
+  app.put('/api/employees/:id', authenticate, async (req: any, res) => {
+    if (!['ADMIN', 'MANAGEMENT', 'TEAM_LEAD', 'HR'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Unauthorized role' });
+    }
+    const { FirstName, LastName, Email, Phone, Department, Position, Status } = req.body;
+    try {
+      const employee = await db('employees').where({ EmployeeID: req.params.id }).first();
+      if (!employee) return res.status(404).json({ error: 'Employee not found' });
+
+      // Update employee record
+      await db('employees').where({ EmployeeID: req.params.id }).update({
+        FirstName,
+        LastName,
+        Email,
+        Phone,
+        Department,
+        Position,
+        Status
+      });
+
+      // Update linked user record
+      if (employee.user_id) {
+        await db('users').where({ id: employee.user_id }).update({
+          name: `${FirstName} ${LastName}`,
+          email: Email
+        });
+      }
+
+      await logAudit(req.user.id, 'EMPLOYEE_UPDATE', `Updated details for employee ${req.params.id}`, req);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Update Error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   app.get('/api/employees/:id/performance', authenticate, async (req, res) => {
     try {
       const records = await db('PerformanceRecords')

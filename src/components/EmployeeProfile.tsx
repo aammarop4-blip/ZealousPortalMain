@@ -15,7 +15,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  Edit2,
+  Save,
+  X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { generatePerformancePDF, generateWarningPDF } from '../lib/pdfUtils';
@@ -54,6 +57,9 @@ export default function EmployeeProfile() {
   const [performance, setPerformance] = React.useState<PerformanceRecord[]>([]);
   const [training, setTraining] = React.useState<TrainingProgress[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [isEditing, setIsEditing] = React.useState(false);
+  const [editForm, setEditForm] = React.useState<EmployeeDetails | null>(null);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     fetchEmployeeData();
@@ -103,6 +109,41 @@ export default function EmployeeProfile() {
     generateWarningPDF(employee, message);
   };
 
+  const startEditing = () => {
+    setEditForm({ ...employee! });
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+    setEditForm(null);
+  };
+
+  const handleSave = async () => {
+    if (!editForm) return;
+    try {
+      setSaving(true);
+      const res = await fetch(`/api/employees/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}` 
+        },
+        body: JSON.stringify(editForm)
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      setEmployee(editForm);
+      setIsEditing(false);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to save employee details');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-center text-zinc-500">Loading profile...</div>;
   if (!employee) return <div className="p-8 text-center text-zinc-500">Employee not found</div>;
 
@@ -116,12 +157,39 @@ export default function EmployeeProfile() {
           <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           Back to Directory
         </button>
-        <button 
-          onClick={handleIssueWarning}
-          className="bg-red-600/10 hover:bg-red-600/20 text-red-500 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border border-red-500/20"
-        >
-          <AlertTriangle size={16} /> Issue Warning Letter (PDF)
-        </button>
+        <div className="flex gap-4">
+          {!isEditing ? (
+            <button 
+              onClick={startEditing}
+              className="bg-zealous-gold/10 hover:bg-zealous-gold/20 text-zealous-gold px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border border-zealous-gold/20"
+            >
+              <Edit2 size={16} /> Edit Profile
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button 
+                onClick={handleSave}
+                disabled={saving}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all disabled:opacity-50"
+              >
+                <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button 
+                onClick={cancelEditing}
+                disabled={saving}
+                className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all disabled:opacity-50"
+              >
+                <X size={16} /> Cancel
+              </button>
+            </div>
+          )}
+          <button 
+            onClick={handleIssueWarning}
+            className="bg-red-600/10 hover:bg-red-600/20 text-red-500 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all border border-red-500/20"
+          >
+            <AlertTriangle size={16} /> Issue Warning Letter (PDF)
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -131,18 +199,55 @@ export default function EmployeeProfile() {
             <div className="w-32 h-32 mx-auto rounded-full bg-zinc-800 border-4 border-zinc-950 flex items-center justify-center text-4xl font-bold text-zinc-400">
               {employee.FirstName.charAt(0)}{employee.LastName.charAt(0)}
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">{employee.FirstName} {employee.LastName}</h1>
-              <p className="text-orange-500 font-medium">{employee.Position}</p>
-            </div>
+            {!isEditing ? (
+              <div>
+                <h1 className="text-2xl font-bold text-white">{employee.FirstName} {employee.LastName}</h1>
+                <p className="text-zealous-gold font-medium">{employee.Position}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input 
+                    className="bg-zealous-black border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:border-zealous-gold outline-none"
+                    placeholder="First Name"
+                    value={editForm?.FirstName}
+                    onChange={e => setEditForm(prev => ({ ...prev!, FirstName: e.target.value }))}
+                  />
+                  <input 
+                    className="bg-zealous-black border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:border-zealous-gold outline-none"
+                    placeholder="Last Name"
+                    value={editForm?.LastName}
+                    onChange={e => setEditForm(prev => ({ ...prev!, LastName: e.target.value }))}
+                  />
+                </div>
+                <input 
+                  className="w-full bg-zealous-black border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:border-zealous-gold outline-none text-center"
+                  placeholder="Position"
+                  value={editForm?.Position}
+                  onChange={e => setEditForm(prev => ({ ...prev!, Position: e.target.value }))}
+                />
+              </div>
+            )}
             <div className="pt-4 flex justify-center">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest ${
-                employee.Status === 'Active' ? 'bg-green-500/10 text-green-500 border border-green-500/20' :
-                employee.Status === 'On Probation' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
-                'bg-zinc-500/10 text-zinc-500 border border-zinc-500/20'
-              }`}>
-                {employee.Status}
-              </span>
+              {!isEditing ? (
+                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest ${
+                  employee.Status === 'Active' ? 'bg-green-500/10 text-green-500 border border-green-500/20' :
+                  employee.Status === 'On Probation' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
+                  'bg-zinc-500/10 text-zinc-500 border border-zinc-500/20'
+                }`}>
+                  {employee.Status}
+                </span>
+              ) : (
+                <select 
+                  className="bg-zealous-black border border-zinc-800 rounded-lg px-3 py-1 text-xs font-bold text-white uppercase tracking-widest focus:border-zealous-gold outline-none"
+                  value={editForm?.Status}
+                  onChange={e => setEditForm(prev => ({ ...prev!, Status: e.target.value }))}
+                >
+                  <option value="Active">Active</option>
+                  <option value="On Probation">On Probation</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -153,15 +258,39 @@ export default function EmployeeProfile() {
             <div className="space-y-4">
               <div className="flex items-center gap-3 text-zinc-400">
                 <Mail size={16} />
-                <span className="text-sm">{employee.Email}</span>
+                {!isEditing ? (
+                  <span className="text-sm">{employee.Email}</span>
+                ) : (
+                  <input 
+                    className="flex-1 bg-zealous-black border border-zinc-800 rounded-lg px-2 py-1 text-sm text-white focus:border-zealous-gold outline-none"
+                    value={editForm?.Email}
+                    onChange={e => setEditForm(prev => ({ ...prev!, Email: e.target.value }))}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-3 text-zinc-400">
                 <Phone size={16} />
-                <span className="text-sm">{employee.Phone}</span>
+                {!isEditing ? (
+                  <span className="text-sm">{employee.Phone}</span>
+                ) : (
+                  <input 
+                    className="flex-1 bg-zealous-black border border-zinc-800 rounded-lg px-2 py-1 text-sm text-white focus:border-zealous-gold outline-none"
+                    value={editForm?.Phone}
+                    onChange={e => setEditForm(prev => ({ ...prev!, Phone: e.target.value }))}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-3 text-zinc-400">
                 <Briefcase size={16} />
-                <span className="text-sm">{employee.Department}</span>
+                {!isEditing ? (
+                  <span className="text-sm">{employee.Department}</span>
+                ) : (
+                  <input 
+                    className="flex-1 bg-zealous-black border border-zinc-800 rounded-lg px-2 py-1 text-sm text-white focus:border-zealous-gold outline-none"
+                    value={editForm?.Department}
+                    onChange={e => setEditForm(prev => ({ ...prev!, Department: e.target.value }))}
+                  />
+                )}
               </div>
               <div className="flex items-center gap-3 text-zinc-400">
                 <Calendar size={16} />
